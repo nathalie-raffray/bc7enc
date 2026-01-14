@@ -25,8 +25,8 @@
 // Call these functions to encode BC1-5:
 // void rgbcx::encode_bc1(uint32_t level, void* pDst, const uint8_t* pPixels, bool allow_3color, bool use_transparent_texels_for_black);
 // void rgbcx::encode_bc3(uint32_t level, void* pDst, const uint8_t* pPixels);
-// void rgbcx::encode_bc4(void* pDst, const uint8_t* pPixels, uint32_t stride = 4);
-// void rgbcx::encode_bc5(void* pDst, const uint8_t* pPixels, uint32_t chan0 = 0, uint32_t chan1 = 1, uint32_t stride = 4);
+// void rgbcx::encode_bc4(void* pDst, const uint8_t* pPixels, bool is_signed = false, uint32_t stride = 4);
+// void rgbcx::encode_bc5(void* pDst, const uint8_t* pPixels, bool is_signed = false, uint32_t chan0 = 0, uint32_t chan1 = 1, uint32_t stride = 4);
 //
 // - level ranges from MIN_LEVEL to MAX_LEVEL. The higher the level, the slower the encoder goes, but the higher the average quality.
 // levels [0,4] are fast and compete against stb_dxt (default and HIGHQUAL). The remaining levels compete against squish/NVTT/icbc and icbc HQ.
@@ -194,11 +194,11 @@ namespace rgbcx
 
 	// Encodes a single channel to BC4.
 	// stride is the source pixel stride in bytes.
-	void encode_bc4(void* pDst, const uint8_t* pPixels, uint32_t stride = 4);
+	void encode_bc4(void* pDst, const uint8_t* pPixels, bool is_signed = false, uint32_t stride = 4);
 
 	// Encodes two channels to BC5. 
 	// chan0/chan1 control which channels, stride is the source pixel stride in bytes.
-	void encode_bc5(void* pDst, const uint8_t* pPixels, uint32_t chan0 = 0, uint32_t chan1 = 1, uint32_t stride = 4);
+	void encode_bc5(void* pDst, const uint8_t* pPixels, bool is_signed = false, uint32_t chan0 = 0, uint32_t chan1 = 1, uint32_t stride = 4);
 
 	// Decompression functions. 
 	
@@ -3881,7 +3881,7 @@ namespace rgbcx
 		}
 	};
 
-	void encode_bc4(void* pDst, const uint8_t* pPixels, uint32_t stride)
+	void encode_bc4_unsigned(void* pDst, const uint8_t* pPixels, uint32_t stride)
 	{
 		assert(g_initialized);
 
@@ -4003,6 +4003,140 @@ namespace rgbcx
 		pDst_bytes[7] = (uint8_t)(f >> 40U);
 	}
 
+    void encode_bc4_signed(void* pDst, const uint8_t* pPixels, uint32_t stride)
+    {
+	    assert(g_initialized);
+
+	    // Reinterpret uint8_t* as int8_t* for signed interpretation
+	    const int8_t* pSignedPixels = reinterpret_cast<const int8_t*>(pPixels);
+
+	    int32_t min0_v, max0_v, min1_v, max1_v, min2_v, max2_v, min3_v, max3_v;
+
+	    {
+		    min0_v = max0_v = pSignedPixels[0 * stride];
+		    min1_v = max1_v = pSignedPixels[1 * stride];
+		    min2_v = max2_v = pSignedPixels[2 * stride];
+		    min3_v = max3_v = pSignedPixels[3 * stride];
+	    }
+
+	    {
+		    int32_t v0 = pSignedPixels[4 * stride]; min0_v = std::min(min0_v, v0); max0_v = std::max(max0_v, v0);
+		    int32_t v1 = pSignedPixels[5 * stride]; min1_v = std::min(min1_v, v1); max1_v = std::max(max1_v, v1);
+		    int32_t v2 = pSignedPixels[6 * stride]; min2_v = std::min(min2_v, v2); max2_v = std::max(max2_v, v2);
+		    int32_t v3 = pSignedPixels[7 * stride]; min3_v = std::min(min3_v, v3); max3_v = std::max(max3_v, v3);
+	    }
+
+	    {
+		    int32_t v0 = pSignedPixels[8 * stride]; min0_v = std::min(min0_v, v0); max0_v = std::max(max0_v, v0);
+		    int32_t v1 = pSignedPixels[9 * stride]; min1_v = std::min(min1_v, v1); max1_v = std::max(max1_v, v1);
+		    int32_t v2 = pSignedPixels[10 * stride]; min2_v = std::min(min2_v, v2); max2_v = std::max(max2_v, v2);
+		    int32_t v3 = pSignedPixels[11 * stride]; min3_v = std::min(min3_v, v3); max3_v = std::max(max3_v, v3);
+	    }
+
+	    {
+		    int32_t v0 = pSignedPixels[12 * stride]; min0_v = std::min(min0_v, v0); max0_v = std::max(max0_v, v0);
+		    int32_t v1 = pSignedPixels[13 * stride]; min1_v = std::min(min1_v, v1); max1_v = std::max(max1_v, v1);
+		    int32_t v2 = pSignedPixels[14 * stride]; min2_v = std::min(min2_v, v2); max2_v = std::max(max2_v, v2);
+		    int32_t v3 = pSignedPixels[15 * stride]; min3_v = std::min(min3_v, v3); max3_v = std::max(max3_v, v3);
+	    }
+
+	    const int32_t min_v = minimum(min0_v, min1_v, min2_v, min3_v);
+	    const int32_t max_v = maximum(max0_v, max1_v, max2_v, max3_v);
+
+	    uint8_t* pDst_bytes = static_cast<uint8_t*>(pDst);
+	
+	    // For SNORM, store as signed int8 (reinterpreted as uint8)
+	    pDst_bytes[0] = static_cast<uint8_t>(static_cast<int8_t>(max_v));
+	    pDst_bytes[1] = static_cast<uint8_t>(static_cast<int8_t>(min_v));
+
+	    if (max_v == min_v)
+	    {
+		    memset(pDst_bytes + 2, 0, 6);
+		    return;
+	    }
+
+	    const int32_t delta = max_v - min_v;
+
+	    // min_v is now 0. Compute thresholds between values by scaling max_v. It's x14 because we're adding two x7 scale factors.
+	    const int t0 = delta * 13;
+	    const int t1 = delta * 11;
+	    const int t2 = delta * 9;
+	    const int t3 = delta * 7;
+	    const int t4 = delta * 5;
+	    const int t5 = delta * 3;
+	    const int t6 = delta * 1;
+
+	    // BC4 floors in its divisions, which we compensate for with the 4 bias.
+	    const int bias = 4 - min_v * 14;
+
+	    static const uint32_t s_tran0[8] = { 1U      , 7U      , 6U      , 5U      , 4U      , 3U      , 2U      , 0U };
+	    static const uint32_t s_tran1[8] = { 1U << 3U, 7U << 3U, 6U << 3U, 5U << 3U, 4U << 3U, 3U << 3U, 2U << 3U, 0U << 3U };
+	    static const uint32_t s_tran2[8] = { 1U << 6U, 7U << 6U, 6U << 6U, 5U << 6U, 4U << 6U, 3U << 6U, 2U << 6U, 0U << 6U };
+	    static const uint32_t s_tran3[8] = { 1U << 9U, 7U << 9U, 6U << 9U, 5U << 9U, 4U << 9U, 3U << 9U, 2U << 9U, 0U << 9U };
+
+	    uint64_t a0, a1, a2, a3;
+	    {
+		    const int v0 = pSignedPixels[0 * stride] * 14 + bias;
+		    const int v1 = pSignedPixels[1 * stride] * 14 + bias;
+		    const int v2 = pSignedPixels[2 * stride] * 14 + bias;
+		    const int v3 = pSignedPixels[3 * stride] * 14 + bias;
+		    a0 = s_tran0[(v0 >= t0) + (v0 >= t1) + (v0 >= t2) + (v0 >= t3) + (v0 >= t4) + (v0 >= t5) + (v0 >= t6)];
+		    a1 = s_tran1[(v1 >= t0) + (v1 >= t1) + (v1 >= t2) + (v1 >= t3) + (v1 >= t4) + (v1 >= t5) + (v1 >= t6)];
+		    a2 = s_tran2[(v2 >= t0) + (v2 >= t1) + (v2 >= t2) + (v2 >= t3) + (v2 >= t4) + (v2 >= t5) + (v2 >= t6)];
+		    a3 = s_tran3[(v3 >= t0) + (v3 >= t1) + (v3 >= t2) + (v3 >= t3) + (v3 >= t4) + (v3 >= t5) + (v3 >= t6)];
+	    }
+
+	    {
+		    const int v0 = pSignedPixels[4 * stride] * 14 + bias;
+		    const int v1 = pSignedPixels[5 * stride] * 14 + bias;
+		    const int v2 = pSignedPixels[6 * stride] * 14 + bias;
+		    const int v3 = pSignedPixels[7 * stride] * 14 + bias;
+		    a0 |= (uint64_t)(s_tran0[(v0 >= t0) + (v0 >= t1) + (v0 >= t2) + (v0 >= t3) + (v0 >= t4) + (v0 >= t5) + (v0 >= t6)] << 12U);
+		    a1 |= (uint64_t)(s_tran1[(v1 >= t0) + (v1 >= t1) + (v1 >= t2) + (v1 >= t3) + (v1 >= t4) + (v1 >= t5) + (v1 >= t6)] << 12U);
+		    a2 |= (uint64_t)(s_tran2[(v2 >= t0) + (v2 >= t1) + (v2 >= t2) + (v2 >= t3) + (v2 >= t4) + (v2 >= t5) + (v2 >= t6)] << 12U);
+		    a3 |= (uint64_t)(s_tran3[(v3 >= t0) + (v3 >= t1) + (v3 >= t2) + (v3 >= t3) + (v3 >= t4) + (v3 >= t5) + (v3 >= t6)] << 12U);
+	    }
+
+	    {
+		    const int v0 = pSignedPixels[8 * stride] * 14 + bias;
+		    const int v1 = pSignedPixels[9 * stride] * 14 + bias;
+		    const int v2 = pSignedPixels[10 * stride] * 14 + bias;
+		    const int v3 = pSignedPixels[11 * stride] * 14 + bias;
+		    a0 |= (((uint64_t)s_tran0[(v0 >= t0) + (v0 >= t1) + (v0 >= t2) + (v0 >= t3) + (v0 >= t4) + (v0 >= t5) + (v0 >= t6)]) << 24U);
+		    a1 |= (((uint64_t)s_tran1[(v1 >= t0) + (v1 >= t1) + (v1 >= t2) + (v1 >= t3) + (v1 >= t4) + (v1 >= t5) + (v1 >= t6)]) << 24U);
+		    a2 |= (((uint64_t)s_tran2[(v2 >= t0) + (v2 >= t1) + (v2 >= t2) + (v2 >= t3) + (v2 >= t4) + (v2 >= t5) + (v2 >= t6)]) << 24U);
+		    a3 |= (((uint64_t)s_tran3[(v3 >= t0) + (v3 >= t1) + (v3 >= t2) + (v3 >= t3) + (v3 >= t4) + (v3 >= t5) + (v3 >= t6)]) << 24U);
+	    }
+
+	    {
+		    const int v0 = pSignedPixels[12 * stride] * 14 + bias;
+		    const int v1 = pSignedPixels[13 * stride] * 14 + bias;
+		    const int v2 = pSignedPixels[14 * stride] * 14 + bias;
+		    const int v3 = pSignedPixels[15 * stride] * 14 + bias;
+		    a0 |= (((uint64_t)s_tran0[(v0 >= t0) + (v0 >= t1) + (v0 >= t2) + (v0 >= t3) + (v0 >= t4) + (v0 >= t5) + (v0 >= t6)]) << 36U);
+		    a1 |= (((uint64_t)s_tran1[(v1 >= t0) + (v1 >= t1) + (v1 >= t2) + (v1 >= t3) + (v1 >= t4) + (v1 >= t5) + (v1 >= t6)]) << 36U);
+		    a2 |= (((uint64_t)s_tran2[(v2 >= t0) + (v2 >= t1) + (v2 >= t2) + (v2 >= t3) + (v2 >= t4) + (v2 >= t5) + (v2 >= t6)]) << 36U);
+		    a3 |= (((uint64_t)s_tran3[(v3 >= t0) + (v3 >= t1) + (v3 >= t2) + (v3 >= t3) + (v3 >= t4) + (v3 >= t5) + (v3 >= t6)]) << 36U);
+	    }
+
+	    const uint64_t f = a0 | a1 | a2 | a3;
+
+	    pDst_bytes[2] = (uint8_t)f;
+	    pDst_bytes[3] = (uint8_t)(f >> 8U);
+	    pDst_bytes[4] = (uint8_t)(f >> 16U);
+	    pDst_bytes[5] = (uint8_t)(f >> 24U);
+	    pDst_bytes[6] = (uint8_t)(f >> 32U);
+	    pDst_bytes[7] = (uint8_t)(f >> 40U);
+    }
+
+    void encode_bc4(void *pDst, const uint8_t *pPixels, bool is_signed, uint32_t stride)
+    {
+        if (is_signed)
+            encode_bc4_signed(pDst, pPixels, stride);
+        else
+            encode_bc4_unsigned(pDst, pPixels, stride);
+    }
+
 	void encode_bc3(void* pDst, const uint8_t* pPixels, uint32_t flags, uint32_t total_orderings_to_try)
 	{
 		assert(g_initialized);
@@ -4010,7 +4144,7 @@ namespace rgbcx
 		// 3-color blocks are not allowed with BC3 (on most GPU's).
 		flags &= ~(cEncodeBC1Use3ColorBlocksForBlackPixels | cEncodeBC1Use3ColorBlocks);
 
-		encode_bc4(pDst, pPixels + 3, 4);
+		encode_bc4(pDst, pPixels + 3, false, 4);
 		encode_bc1(static_cast<uint8_t*>(pDst) + 8, pPixels, flags, total_orderings_to_try);
 	}
 
@@ -4018,16 +4152,16 @@ namespace rgbcx
 	{
 		assert(g_initialized);
 
-		encode_bc4(pDst, pPixels + 3, 4);
+		encode_bc4(pDst, pPixels + 3, false, 4);
 		encode_bc1(level, static_cast<uint8_t*>(pDst) + 8, pPixels, false, false);
 	}
 
-	void encode_bc5(void* pDst, const uint8_t* pPixels, uint32_t chan0, uint32_t chan1, uint32_t stride)
+	void encode_bc5(void* pDst, const uint8_t* pPixels, bool is_signed, uint32_t chan0, uint32_t chan1, uint32_t stride)
 	{
 		assert(g_initialized);
 
-		encode_bc4(pDst, pPixels + chan0, stride);
-		encode_bc4(static_cast<uint8_t*>(pDst) + 8, pPixels + chan1, stride);
+		encode_bc4(pDst, pPixels + chan0, is_signed, stride);
+		encode_bc4(static_cast<uint8_t*>(pDst) + 8, pPixels + chan1, is_signed, stride);
 	}
 		
 	// Returns true if the block uses 3 color punchthrough alpha mode.
